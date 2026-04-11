@@ -40,14 +40,32 @@ void loop() {
     // Check for remote commands every 3 seconds
     logger.checkCommands();
 
-    // Log single sensor
-    float temperature = 24.5;
-    logger.logSensor("temperature", temperature, "C");
+    // Sensors without units
+	ESPTrace::Sensor sensors[] = {
+		{"temp",     24.5},
+		{"humidity", 63.0},
+		{"voltage",  3.3}
+	};
 
-    // Log multiple sensors at once
-    const char* names[]  = {"temp", "humidity", "voltage"};
-    float       values[] = {24.5,   63.0,        3.3};
-    logger.logSensors(names, values, 3);
+	// Sensors with units
+	ESPTrace::Sensor sensors[] = {
+		{"temp",     24.5, "C"},
+		{"humidity", 63.0, "%"},
+		{"voltage",  3.3,  "V"}
+	};
+
+	// Sensors with and without units
+	ESPTrace::Sensor sensors[] = {
+		{"temp",     24.5, "C"},
+		{"uptime",   3600},       // without unit
+		{"voltage",  3.3,  "V"}
+	};
+
+	logger.logSensors(sensors, 3);
+
+	// One sensor - same API
+	logger.logSensor("temp", 24.5, "C");
+	logger.logSensor("uptime", 3600); // without unit
 
     // Check if last send was successful
     if (!logger.lastSendOk()) {

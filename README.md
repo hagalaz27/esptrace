@@ -35,9 +35,15 @@ void setup() {
     logger.logResetReason();
     logger.logWifiInfo();
     logger.info("Device started!");
+
+    logger.onCommand("led_on", [](const String& payload) {
+        digitalWrite(LED_BUILTIN, HIGH);
+        logger.info("LED turned ON");
+    });
 }
 
 void loop() {
+    logger.checkCommands(); // non-blocking, call every iteration
     logger.info("Hello from ESP32");
     delay(5000);
 }
@@ -51,14 +57,16 @@ void loop() {
 | `warning(msg)` | Log warning |
 | `error(msg)` | Log error |
 | `debug(msg)` | Log debug message |
+| `log(msg, level)` | Log with custom level |
 | `logJson(doc)` | Log ArduinoJson document |
-| `logSensor(name, value, unit)` | Log single sensor value |
-| `logSensors(names[], values[], count)` | Log multiple sensors |
+| `logSensor(name, value, unit)` | Log single sensor |
+| `logSensors(sensors[], count)` | Log multiple sensors |
 | `logSystemInfo()` | Log heap, CPU, uptime |
 | `logWifiInfo()` | Log IP, MAC, RSSI |
 | `logResetReason()` | Log ESP32 reset reason |
-| `checkCommands()` | Poll for remote commands |
+| `checkCommands()` | Poll remote commands (non-blocking) |
 | `onCommand(cmd, callback)` | Register command handler |
+| `setCommandInterval(ms)` | Set command poll interval (default 3000ms) |
 | `setMinLevel(level)` | Set minimum log level |
 | `enable(bool)` | Enable/disable logger |
 | `lastSendOk()` | Check last send status |
@@ -73,43 +81,77 @@ logger.warning("Low battery: 3.1V");
 logger.error("Sensor timeout!");
 ```
 
-## JSON Auto-render
+## Sensors
 
-Send JSON and it renders as a formatted table in the dashboard:
+Single sensor with optional unit:
 
 ```cpp
-JsonDocument doc;
-doc["temp"]     = 24.5;
-doc["humidity"] = 63;
-doc["voltage"]  = 3.3;
-logger.logJson(doc);
+logger.logSensor("temperature", 24.5);       // without unit
+logger.logSensor("temperature", 24.5, "C");  // with unit
+```
 
-// Or use built-in helpers
-logger.logSensor("temperature", 24.5, "C");
+Multiple sensors using `ESPTrace::Sensor` struct:
 
-const char* names[]  = {"temp", "humidity", "voltage"};
-float       values[] = {24.5,   63.0,        3.3};
-logger.logSensors(names, values, 3);
+```cpp
+// Without units
+ESPTrace::Sensor sensors[] = {
+    {"temp",     24.5},
+    {"humidity", 63.0},
+    {"voltage",  3.3}
+};
+
+// With units
+ESPTrace::Sensor sensors[] = {
+    {"temp",     24.5, "C"},
+    {"humidity", 63.0, "%"},
+    {"voltage",  3.3,  "V"}
+};
+
+// Mixed — unit is optional per sensor
+ESPTrace::Sensor sensors[] = {
+    {"temp",     24.5, "C"},
+    {"uptime",   3600},
+    {"voltage",  3.3,  "V"}
+};
+
+logger.logSensors(sensors, 3);
 ```
 
 ## Remote Commands
 
-Send commands from the dashboard to your running device:
+Register handlers in `setup()`, call `checkCommands()` in `loop()` — no blocking, no manual delay needed:
 
 ```cpp
-logger.onCommand("led_on", [](const String& payload) {
-    digitalWrite(LED_PIN, HIGH);
-});
+void setup() {
+    logger.onCommand("led_on", [](const String& payload) {
+        digitalWrite(LED_BUILTIN, HIGH);
+        logger.info("LED turned ON");
+    });
 
-logger.onCommand("set_delay", [](const String& payload) {
-    int ms = payload.toInt();
-});
+    logger.onCommand("led_off", [](const String& payload) {
+        digitalWrite(LED_BUILTIN, LOW);
+        logger.info("LED turned OFF");
+    });
+
+    logger.onCommand("set_interval", [](const String& payload) {
+        int ms = payload.toInt();
+        logger.setCommandInterval(ms);
+    });
+
+    // Change polling interval (default 3000ms)
+    logger.setCommandInterval(5000);
+}
 
 void loop() {
-    logger.checkCommands(); // poll every loop iteration
-    delay(3000);
+    logger.checkCommands(); // internally throttled — safe to call every tick
+    
+    // rest of your code runs without blocking
 }
 ```
+
+Built-in commands handled automatically:
+- `reboot` — restarts the device
+- `ping` — responds with `info("Pong!")`
 
 ## Startup Diagnostics
 
@@ -130,7 +172,7 @@ void setup() {
 // In production — skip DEBUG logs
 logger.setMinLevel(ESPTrace::LOG_INFO);
 
-// Disable entirely
+// Disable entirely (e.g. before deep sleep)
 logger.enable(false);
 ```
 

@@ -18,6 +18,12 @@ public:
         _minLevel  = LOG_DEBUG;
     }
 
+    struct Sensor {
+        const char* name;
+        float       value;
+        const char* unit = "";
+    };
+
     // ── Logging levels ─----───────────────────────────────────
     enum Level { LOG_DEBUG = 0, LOG_INFO = 1, LOG_WARNING = 2, LOG_ERROR = 3 };
 
@@ -101,20 +107,22 @@ public:
     }
 
     // Log sensor value
-    bool logSensor(const String& name, float value, const String& unit = "") {
-        JsonDocument doc;
-        doc[name] = value;
-        if (unit.length() > 0) doc["unit"] = unit;
-        String json;
-        serializeJson(doc, json);
-        return send(json, "INFO");
+    bool logSensor(const char* name, float value, const char* unit = "") {
+        Sensor s = {name, value, unit};
+        return logSensors(&s, 1);
     }
 
     // Log multiple sensors at once
-    bool logSensors(const char* names[], const float values[], const int count) {
+    bool logSensors(const Sensor sensors[], const int count) {
         JsonDocument doc;
         for (int i = 0; i < count; i++) {
-            doc[names[i]] = values[i];
+            if (strlen(sensors[i].unit) > 0) {
+                JsonObject obj = doc[sensors[i].name].to<JsonObject>();
+                obj["value"] = sensors[i].value;
+                obj["unit"]  = sensors[i].unit;
+            } else {
+                doc[sensors[i].name] = sensors[i].value;
+            }
         }
         String json;
         serializeJson(doc, json);
