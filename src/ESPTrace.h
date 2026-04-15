@@ -145,44 +145,16 @@ public:
 
    // Check commands from the server
 // Internally throttled — safe to call every loop() iteration
-bool checkCommands() {
-    unsigned long now = millis();
-    if (now - _lastCommandCheck < _commandInterval) return false;
-    _lastCommandCheck = now;
-
-    if (WiFi.status() != WL_CONNECTED) return false;
-
-    HTTPClient http;
-    String url = String(_serverUrl);
-    url.replace("log.php", "command.php");
-    http.begin(url);
-    http.addHeader("X-Device-Token", _token);
-    http.setTimeout(5000);
-
-    int code = http.GET();
-    if (code == 200) {
-        String body = http.getString();
-        JsonDocument doc;
-        DeserializationError err = deserializeJson(doc, body);
-        if (!err && doc["command"] && doc["command"] != "null") {
-            String cmd     = doc["command"].as<String>();
-            String payload = doc["payload"] | "";
-
-            if (cmd == "reboot") {
-                warning("Reboot command received");
-                http.end();
-                ESP.restart();
-            }
-            if (cmd == "ping") {
-                info("Pong!");
-            }
-            if (_commands.count(cmd)) {
-                _commands[cmd](payload);
-            }
-        }
-    }
-    http.end();
-    return code == 200;
+void startCommandListener() {
+    xTaskCreatePinnedToCore(
+        _commandTask,
+        "ESPTraceCmd",
+        8192,
+        this,
+        1,
+        &_commandTaskHandle,
+        0
+    );
 }
 
 // Set command polling interval (default 3000ms)
@@ -198,6 +170,7 @@ private:
     std::map<String, CommandCallback> _commands;
     unsigned long _lastCommandCheck = 0;
     unsigned long _commandInterval  = 3000;
+	TaskHandle_t _commandTaskHandle = nullptr;
 
     // ── Sending to the server ────────────────────────────────────
     bool send(const String& message, const String& level) {
@@ -253,4 +226,43 @@ private:
             default:               return "Unknown (" + String(reason) + ")";
         }
     }
+	
+	static void _commandTask(void* param) {
+		ESPTrace* self = (ESPTrace*)param;
+		for (;;) {
+			if (WiFi.status() == WL_CONNECTED) {
+				HTTPClient http;
+				String url = String(self->_serverUrl);
+				url.replace("log.php", "command.php");
+				http.begin(url);
+				http.addHeader("X-Device-Token", self->_token);
+				http.setTimeout(5000);
+
+				int code = http.GET();
+				if (code == 200) {
+					String body = http.getString();
+					JsonDocument doc;
+					DeserializationError err = deserializeJson(doc, body);
+					if (!err && doc["command"] && doc["command"] != "null") {
+						String cmd     = doc["command"].as<String>();
+						String payload = doc["payload"] | "";
+
+						if (cmd == "reboot") {
+							self->warning("Reboot command received");
+							http.end();
+							ESP.restart();
+						}
+						if (cmd == "ping") {
+							self->info("Pong!");
+						}
+						if (self->_commands.count(cmd)) {
+							self->_commands[cmd](payload);
+						}
+					}
+				}
+				http.end();
+			}
+			vTaskDelay(pdMS_TO_TICKS(self->_commandInterval));
+		}
+	}
 };
