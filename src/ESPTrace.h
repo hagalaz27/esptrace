@@ -108,26 +108,24 @@ public:
 
     // Log sensor value
     bool logSensor(const char* name, float value, const char* unit = "") {
-        Sensor s = {name, value, unit};
-        return logSensors(&s, 1);
-    }
+		Sensor s = {name, value, unit};
+		return logSensors(&s, 1);
+	}
 
     // Log multiple sensors at once
     bool logSensors(const Sensor sensors[], const int count) {
-        JsonDocument doc;
-        for (int i = 0; i < count; i++) {
-            if (strlen(sensors[i].unit) > 0) {
-                JsonObject obj = doc[sensors[i].name].to<JsonObject>();
-                obj["value"] = sensors[i].value;
-                obj["unit"]  = sensors[i].unit;
-            } else {
-                doc[sensors[i].name] = sensors[i].value;
-            }
-        }
-        String json;
-        serializeJson(doc, json);
-        return send(json, "INFO");
-    }
+		JsonDocument doc;
+		for (int i = 0; i < count; i++) {
+			JsonObject obj = doc[sensors[i].name].to<JsonObject>();
+			obj["value"] = sensors[i].value;
+			if (strlen(sensors[i].unit) > 0) {
+				obj["unit"] = sensors[i].unit;
+			}
+		}
+		String json;
+		serializeJson(doc, json);
+		return send(json, "INFO");
+	}
 
     // ── Get the latest error ─────────────────────────────
     String getLastError() { return _lastError; }

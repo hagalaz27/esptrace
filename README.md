@@ -40,10 +40,12 @@ void setup() {
         digitalWrite(LED_BUILTIN, HIGH);
         logger.info("LED turned ON");
     });
+
+    // Starts background task on core 0 — won't block your code
+    logger.startCommandListener();
 }
 
 void loop() {
-    logger.checkCommands(); // non-blocking, call every iteration
     logger.info("Hello from ESP32");
     delay(5000);
 }
@@ -64,7 +66,7 @@ void loop() {
 | `logSystemInfo()` | Log heap, CPU, uptime |
 | `logWifiInfo()` | Log IP, MAC, RSSI |
 | `logResetReason()` | Log ESP32 reset reason |
-| `checkCommands()` | Poll remote commands (non-blocking) |
+| `startCommandListener()` | Start background command task (core 0) |
 | `onCommand(cmd, callback)` | Register command handler |
 | `setCommandInterval(ms)` | Set command poll interval (default 3000ms) |
 | `setMinLevel(level)` | Set minimum log level |
@@ -83,46 +85,39 @@ logger.error("Sensor timeout!");
 
 ## Sensors
 
-Single sensor with optional unit:
+Single sensor, unit is optional:
 
 ```cpp
-logger.logSensor("temperature", 24.5);       // without unit
-logger.logSensor("temperature", 24.5, "C");  // with unit
+logger.logSensor("temperature", 24.5);
+logger.logSensor("temperature", 24.5, "C");
+```
+
+Both produce consistent JSON format:
+```json
+{"temperature": {"value": 24.5}}
+{"temperature": {"value": 24.5, "unit": "C"}}
 ```
 
 Multiple sensors using `ESPTrace::Sensor` struct:
 
 ```cpp
-// Without units
-ESPTrace::Sensor sensors[] = {
-    {"temp",     24.5},
-    {"humidity", 63.0},
-    {"voltage",  3.3}
-};
-
 // With units
 ESPTrace::Sensor sensors[] = {
     {"temp",     24.5, "C"},
     {"humidity", 63.0, "%"},
-    {"voltage",  3.3,  "V"}
+    {"voltage",  3.3,  "V"},
+    {"uptime",   3600},       // unit is optional
 };
-
-// Mixed — unit is optional per sensor
-ESPTrace::Sensor sensors[] = {
-    {"temp",     24.5, "C"},
-    {"uptime",   3600},
-    {"voltage",  3.3,  "V"}
-};
-
-logger.logSensors(sensors, 3);
+logger.logSensors(sensors, 4);
 ```
 
 ## Remote Commands
 
-Register handlers in `setup()`, call `checkCommands()` in `loop()` — no blocking, no manual delay needed:
+Commands run in a **background FreeRTOS task on core 0** — your main code on core 1 is never blocked.
 
 ```cpp
 void setup() {
+    // Register handlers
     logger.onCommand("led_on", [](const String& payload) {
         digitalWrite(LED_BUILTIN, HIGH);
         logger.info("LED turned ON");
@@ -134,18 +129,18 @@ void setup() {
     });
 
     logger.onCommand("set_interval", [](const String& payload) {
-        int ms = payload.toInt();
-        logger.setCommandInterval(ms);
+        logger.setCommandInterval(payload.toInt());
     });
 
-    // Change polling interval (default 3000ms)
+    // Optional: change polling interval (default 3000ms)
     logger.setCommandInterval(5000);
+
+    // Start background listener — call once in setup()
+    logger.startCommandListener();
 }
 
 void loop() {
-    logger.checkCommands(); // internally throttled — safe to call every tick
-    
-    // rest of your code runs without blocking
+    // No checkCommands() needed here
 }
 ```
 
